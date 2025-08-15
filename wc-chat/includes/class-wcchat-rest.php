@@ -162,7 +162,7 @@ class REST {
 
         // Mark other people's messages as read
         $wpdb->query($wpdb->prepare(
-            "UPDATE $messages SET is_read=1, read_at=%s WHERE session)id=%d AND sender_i<>%d AND is_read=0",
+            "UPDATE $messages SET is_read=1, read_at=%s WHERE session_id=%d AND sender_id<>%d AND is_read=0",
             current_time('mysql'), $session_id, get_current_user_id()
         ));
 
@@ -182,7 +182,7 @@ class REST {
 
     public static function typing(WP_REST_Request $req) {
         $session_id = (int) $req->get_param('session_id');
-        Utils::set_typing($session_id, get_current_user());
+        Utils::set_typing($session_id, get_current_user_id());
         return ['others_typing' => Utils::others_typing($session_id, get_current_user_id())];
     }
 
@@ -233,8 +233,7 @@ add_action('wcchat_new_message', function($session_id, $message_id) {
     // Find other participants & email them
     global $wpdb;
     $parts = $wpdb->prefix . 'wcchat_participants';
-    $others = $wpdb->get_col($wpdb->prepare("SELECT user_id FROM $parts WHERE session_id=%d AND user_id<>%d", $session_id, get_current_user_id()
-    ));
+    $others = $wpdb->get_col($wpdb->prepare("SELECT user_id FROM $parts WHERE session_id=%d AND user_id<>%d", $session_id, get_current_user_id()));
     foreach ($others as $uid) {
         $user = get_userdata($uid);
         if ($user && $user->user_email) {

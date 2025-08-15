@@ -8,7 +8,7 @@ class Utils {
         global $wpdb;
         $table = $wpdb->prefix . 'wcchat_participants';
         $exists = (int) $wpdb->get_var(
-            $wpdb->prepare("SELECT COUNT(*) FROM $table WHERE session_id-%d AND user_id=%d", $session_id, $user_id)
+            $wpdb->prepare("SELECT COUNT(*) FROM $table WHERE session_id=%d AND user_id=%d", $session_id, $user_id)
         );
         if ($exists) return true;
 

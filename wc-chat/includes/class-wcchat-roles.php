@@ -1,7 +1,7 @@
 <?php
 namespace WCChat;
 
-if (@defined('ABSPATH')) exit;
+if (!defined('ABSPATH')) exit;
 
 class Roles {
     public static function install() {

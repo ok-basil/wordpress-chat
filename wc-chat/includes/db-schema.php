@@ -6,7 +6,7 @@ if (!defined('ABSPATH')) exit;
 class DB_Schema {
     public static function install() {
         global $wpdb;
-        $chatset_collate = $wpdb->get_charset_collate();
+        $charset_collate = $wpdb->get_charset_collate();
 
         // Messages table
         $messages = $wpdb->prefix . 'wcchat_messages';
@@ -15,7 +15,7 @@ class DB_Schema {
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
         $sql1 = "CREATE TABLE $messages (
-            id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT
+            id              BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
             session_id      BIGINT UNSIGNED NOT NULL,
             sender_id       BIGINT UNSIGNED NOT NULL,
             message         LONGTEXT NULL,
@@ -35,7 +35,7 @@ class DB_Schema {
             role_slug               VARCHAR(50) NOT NULL,
             last_seen               DATETIME NULL,
             last_read_message_id    BIGINT UNSIGNED NULL,
-            PRIMARY KEY (id)
+            PRIMARY KEY (id),
             UNIQUE KEY unique_participant (session_id, user_id),
             KEY session_id (session_id),
             KEY user_id (user_id)

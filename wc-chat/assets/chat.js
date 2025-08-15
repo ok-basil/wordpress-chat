@@ -45,7 +45,7 @@
     function api(method, path, data, isMultipart) {
         return fetch(REST + path, {
             method: method,
-            body: isMultiart ? data : (data ? JSON.stringify(data) : null),
+            body: isMultipart ? data : (data ? JSON.stringify(data) : null),
             headers: {
                 'X-WP-Nonce': NONCE,
                 ...(isMultipart ? {} : { 'Content-Type': 'application/json' })
@@ -115,7 +115,7 @@
         return api( 'POST', 'typing', { session_id: sessionId }).then(res => {
             if (res && Array.isArray(res.others_typing) && res.others_typing.length) {
                 $typing.textContent = 'Someone is typing...';
-                $tyoing.hidden = false;
+                $typing.hidden = false;
             } else {
                 $typing.hidden = true;
                 $typing.textContent = '';
