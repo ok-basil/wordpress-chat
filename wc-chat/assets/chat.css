@@ -1,0 +1,148 @@
+:root {
+    /* Light theme colors */
+    --wcchat-bg: #fff;
+    --wcchat-fg: #111;
+    --wcchat-accent: #2563eb;
+    --wcchat-muted: #eee;
+}
+
+/* Dark theme colors */
+.wcchat-dark :root,
+.wcchat-dark {
+    --wcchat-bg: #0b1020;
+    --wcchat-fg: #e9eefb;
+    --wcchat-accent: #7aa2ff;
+    --wcchat-muted: #18213a;
+}
+
+/* Main Widget Container */
+.wcchat-widget {
+    font-family: system-ui, -apple-system, Roboto, sans-serif;
+    background: var(--wcchat-bg);
+    color: var(--wcchat-fg);
+    border-radius: 16px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+    max-width: 640px;
+    margin: 1rem auto;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    height: 480px;
+}
+
+/* Header Section */
+.wcchat-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--wcchat-muted);
+}
+
+.wcchat-title {
+    font-weight: 600;
+}
+
+.wcchat-theme-toggle {
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    font-size: 14px;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+}
+
+.wcchat-theme-toggle:after {
+    content: '🌓';
+}
+
+/* Messages Section */
+.wcchat-messages {
+    flex: 1;
+    overflow: auto;
+    padding: 12px;
+    background: linear-gradient(180deg,transparent, rgba(0, 0, 0, 0.02));
+}
+
+.wcchat-row {
+    display: flex;
+    margin: 0.25rem 0;
+}
+
+.wcchat-row.me {
+    justify-content: flex-end;
+}
+
+/* Message Bubbles */
+.wcchat-bubble {
+    max-width: 78%;
+    padding: 0.5rem 0.75rem;
+    border-radius: 14px;
+    background: var(--wcchat-muted);
+}
+
+.wcchat-row.me .wcchat-bubble {
+    background: var(--wcchat-accent);
+    color: #fff;
+}
+
+.wcchat-bubble-text {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.wcchat-meta {
+    font-size: 12px;
+    opacity: 0.7;
+    margin-top: 0.25rem;
+    text-align: right;
+}
+
+/* Typing Indicator */
+.wcchat-typing {
+    padding: 0 0.75rem 0.5rem;
+    font-size: 0.9rem;
+    opacity: 0.5;
+}
+
+/* Input Section */
+.wcchat-input {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    border-top: 1px solid var(--wcchat-muted);
+}
+
+.wcchat-input input[type="text"] {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    border-radius: 10px;
+    border: 1px solid var(--wcchat-muted);
+    background: transparent;
+    color: inherit;
+}
+
+.wcchat-input button {
+    border: 0;
+    border-radius: 10px;
+    padding: 0.5rem 0.8rem;
+    background: var(--wcchat-accent);
+    color: #fff;
+    cursor: pointer;
+}
+
+.wcchat-input #wcchat-attach {
+    background: transparent;
+    color: inherit;
+    border: 1px dashed var(--wcchat-muted);
+}
+
+/* Responsive Design */
+@media (max-width: 640px) {
+    .wcchat-widget {
+        height: 70dvh;
+        border-radius: 0;
+        max-width: 100%;
+    }
+}
