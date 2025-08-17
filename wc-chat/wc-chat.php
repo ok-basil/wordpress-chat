@@ -79,15 +79,18 @@ add_action('wp_enqueue_scripts', function() {
 
 // Mail notification
 add_action('phpmailer_init', function($phpmailer) {
-    $phpmailer->isSMTP();
-    $phpmailer->Host        = WCCHAT_SMTP_HOST;
-    $phpmailer->Port        = defined('WCCHAT_SMTP_PORT') ? WCCHAT_SMTP_PORT : 587;
-    $phpmailer->SMTPAuth    = TRUE;
-    $phpmailer->SMTPSecure  = 'tls';
-    $phpmailer->Username    = WCCHAT_SMTP_USERNAME;
-    $phpmailer->Password    = WCCHAT_SMTP_PASSWORD;
-    $phpmailer->From        = defined('WCCHAT_SMTP_FROM') ? WCCHAT_SMTP_FROM : WCCHAT_SMTP_USERNAME;
-    $phpmailer->FromName    = get_bloginfo('name');
+    // Only configure if constants are defined
+    if (defined('WCCHAT_SMTP_HOST') && defined('WCCHAT_SMTP_USERNAME') && defined('WCCHAT_SMTP_PASSWORD')) {
+        $phpmailer->isSMTP();
+        $phpmailer->Host        = WCCHAT_SMTP_HOST;
+        $phpmailer->Port        = defined('WCCHAT_SMTP_PORT') ? WCCHAT_SMTP_PORT : 587;
+        $phpmailer->SMTPAuth    = TRUE;
+        $phpmailer->SMTPSecure  = 'tls';
+        $phpmailer->Username    = WCCHAT_SMTP_USERNAME;
+        $phpmailer->Password    = WCCHAT_SMTP_PASSWORD;
+        $phpmailer->From        = defined('WCCHAT_SMTP_FROM') ? WCCHAT_SMTP_FROM : WCCHAT_SMTP_USERNAME;
+        $phpmailer->FromName    = get_bloginfo('name');
+    }
 });
 
 // Shortcode
