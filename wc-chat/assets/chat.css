@@ -162,7 +162,7 @@
 /* Responsive Design */
 @media (max-width: 640px) {
     .wcchat-widget {
-        height: 70dvh;
+        height: 40dvh;
         border-radius: 0;
         max-width: 100%;
     }
