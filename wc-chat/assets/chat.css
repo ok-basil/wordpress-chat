@@ -39,6 +39,23 @@
     border-bottom: 1px solid var(--wcchat-muted);
 }
 
+.wcchat-presence {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 12px;
+    opacity: 0.5;
+}
+.wcchat-presence .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #aaa;
+}
+
+.wcchat-presence.online .dot {
+    background: #22c55e; /* green when online */
+}
 .wcchat-title {
     font-weight: 600;
 }
@@ -61,6 +78,9 @@
 .wcchat-messages {
     flex: 1;
     overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable both-edges;
     padding: 12px;
     background: linear-gradient(180deg,transparent, rgba(0, 0, 0, 0.02));
 }
@@ -76,7 +96,7 @@
 
 /* Message Bubbles */
 .wcchat-bubble {
-    max-width: 78%;
+    max-width: 70%;
     padding: 0.5rem 0.75rem;
     border-radius: 14px;
     background: var(--wcchat-muted);
@@ -88,6 +108,7 @@
 }
 
 .wcchat-bubble-text {
+    font-size: 16px;
     white-space: pre-wrap;
     word-wrap: break-word;
 }

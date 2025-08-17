@@ -19,6 +19,9 @@ $includes = [
     'includes/class-wcchat-cpt.php',
     'includes/class-wcchat-rest.php',
     'includes/class-wcchat-woo.php',
+    'includes/class-wcchat-settings.php',
+    'includes/class-wcchat-escalation.php',
+    'includes/class-wcchat-email.php',
     'includes/db-schema.php',
 ];
 
@@ -37,6 +40,9 @@ register_activation_hook(__FILE__, function() {
     if (class_exists('\WCChat\Roles')) {
         \WCChat\Roles::install();
     }
+    if (!get_option(\WCChat\Settings::OPTION_KEY)) {
+        add_option(\WCChat\Settings::OPTION_KEY, \WCChat\Settings::defaults());
+    }
 });
 
 // Initialize plugin
@@ -44,7 +50,16 @@ add_action('init', function() {
    if (class_exists('\WCChat\CPT')) {
        \WCChat\CPT::register();
    }
+
+   if (class_exists('\WCChat\Settings')) {
+       \WCChat\Settings::init();
+   }
 });
+
+add_action('rest_api_init', function() {
+    \WCChat\REST::register_routes();
+});
+
 
 // Enqueue scripts and styles
 add_action('wp_enqueue_scripts', function() {
@@ -80,9 +95,13 @@ add_shortcode('wc_chat', function ($atts) {
         <div class="wcchat-widget">
             <div class="wcchat-header">
                 <div class="wcchat-title">Chat</div>
+                <div class="wcchat-presence" id="wcchat-presence" hidden>
+                    <span class="dot" aria-hidden="true"></span>
+                    <span class="label">Offline</span>
+                </div>
                 <button class="wcchat-theme-toggle" aria-label="Toggle theme"></button>
             </div>
-            <div class="wcchat-message" id="wcchat-messages" aria-live="polite"></div>
+            <div class="wcchat-messages" id="wcchat-messages" aria-live="polite" tabindex="0"></div>
             <div class="wcchat-typing" id="wcchat-typing" hidden></div>
             <form class="wcchat-input" id="wcchat-form">
                 <input type="text" id="wcchat-text" placeholder="Type a message..." aria-autocomplete="off" required />

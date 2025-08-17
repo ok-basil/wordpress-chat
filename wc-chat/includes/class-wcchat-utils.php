@@ -6,19 +6,66 @@ if (!defined('ABSPATH')) exit;
 class Utils {
     public static function ensure_user_in_session($session_id, $user_id) {
         global $wpdb;
-        $table = $wpdb->prefix . 'wcchat_participants';
+        $parts = $wpdb->prefix . 'wcchat_participants';
+
+        // Already in?
         $exists = (int) $wpdb->get_var(
-            $wpdb->prepare("SELECT COUNT(*) FROM $table WHERE session_id=%d AND user_id=%d", $session_id, $user_id)
+            $wpdb->prepare("SELECT COUNT(*) FROM $parts WHERE session_id=%d AND user_id=%d", $session_id, $user_id)
         );
         if ($exists) return true;
 
-        // Allow auto-join creator or product owner when session is first created via REST
+        // Try auto-join based on role or product context
+        $user = get_userdata($user_id);
+        if (!$user) return false;
+
+        // Product context
+        $product_id = (int) get_post_meta($session_id, '_wcchat_product_id', true);
+        $product_author = $product_id ? (int) get_post_field('post_author', $product_id) : 0;
+        $designer_id = (int) get_post_meta($product_id, '_wcchat_designer_user_id', true);
+
+        // Role-based auto-join
+        if (in_array('agent', (array) $user->roles, true) || in_array('administrator', (array) $user->roles, true)) {
+            return self::add_participant($session_id, $user_id, 'agent');
+        }
+        if (in_array('shop_manager', (array) $user->roles, true)) {
+            return self::add_participant($session_id, $user_id, 'merchant');
+        }
+
+        // Product-author auto-join as merchant
+        if ($product_author && $user_id === $product_author) {
+            return self::add_participant($session_id, $user_id, 'merchant');
+        }
+
+        // Optional: designer meta auto-join
+        if ($designer_id && $user_id === $designer_id) {
+            return self::add_participant($session_id, $user_id, 'designer');
+        }
+
+        // Otherwise not allowed to auto-join
         return false;
     }
 
+    public static function add_participant($session_id, $user_id, $role_slug) {
+        global $wpdb;
+        $parts = $wpdb->prefix . 'wcchat_participants';
+
+        // Avoid unique constraint error
+        $exists = (int) $wpdb->get_var(
+            $wpdb->prepare("SELECT COUNT(*) FROM $parts WHERE session_id=%d AND user_id=%d", $session_id, $user_id)
+        );
+        if ($exists) return true;
+
+        $wpdb->insert($parts, [
+            'session_id'        => (int) $session_id,
+            'user_id'           => (int) $user_id,
+            'role_slug'         => sanitize_key($role_slug),
+            'last_seen'         => current_time('mysql'),
+        ]);
+        return true;
+    }
+
     public static function set_typing($session_id, $user_id) {
-        // Transient expires quickly; used for typing indicator
-        set_transient("wcchat_typing_{session_id}_{$user_id}", 1, 8);
+        set_transient("wcchat_typing_{$session_id}_{$user_id}", 1, 8);
     }
 
     public static function others_typing($session_id, $exclude_user_id) {

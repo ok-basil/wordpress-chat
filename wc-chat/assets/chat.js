@@ -16,12 +16,15 @@
     const $text = document.getElementById('wcchat-text');
     const $attachBtn = document.getElementById('wcchat-attach');
     const $file = document.getElementById('wcchat-file');
+    const $presence = document.getElementById('wcchat-presence');
 
     let sessionId = parseInt(sessionIdAttr || 0, 10);
     let lastId = 0;
+    let autoStickBottom = true;
     let pollTimer = null;
     let presenceTimer = null;
     let typingTimer = null;
+    let otherIds = [];
 
     if (!isLogged) {
         $messages.innerHTML += '<div class="wcchat-info">Please log in to use chat.</div>';
@@ -36,7 +39,7 @@
     if ($toggle) {
         $toggle.addEventListener('click', () => {
             document.documentElement.classList.toggle('wcchat-dark');
-            localStorage.setItem('wcchat_theme',
+            localStorage.setItem('wcchat-theme',
                 document.documentElement.classList.contains('wcchat-dark') ? 'dark' : 'light');
             }
         );
@@ -62,6 +65,35 @@
         );
     }
 
+    function fetchParticipants() {
+        return api('GET', `participants?session_id=${sessionId}`).then(list => {
+            if (!Array.isArray(list)) return;
+            otherIds = list.map(p => parseInt(p.user_id, 10)).filter(id => id != me);
+        });
+    }
+
+    function presenceLookup() {
+        if (!otherIds.length) return Promise.resolve()
+
+        const qs = otherIds.map(id => `user_ids[]=${encodeURIComponent(id)}`).join('&');
+        return api('GET', `presence?${qs}`).then(map => {
+            const anyOnline = Object.values(map || {}).some(Boolean);
+
+            const presence = document.querySelector('#wcchat-presence');
+            const label = presence.querySelector('.label');
+
+            if (anyOnline) {
+                presence.removeAttribute('hidden');
+                presence.classList.add('online');
+                label.textContent = 'Online';
+            } else {
+                presence.removeAttribute('hidden');
+                presence.classList.remove('online');
+                label.textContent = 'Offline';
+            }
+        });
+    }
+
     function renderMessage(m) {
         const mime = parseInt(m.sender_id, 10) === me;
         const att = m.attachment_id ? `<div class="wcchat-attachment"><a href="${m.attachment_url || '#'}" target="_blank">Attachment</a></div>` : '';
@@ -74,13 +106,27 @@
         </div>`
     }
 
+    function isNearBottom() {
+        const el = $messages;
+        if (!el) return false;
+        const delta = el.scrollHeight - el.scrollTop - el.clientHeight;
+        return delta < 24;
+    }
+
+    // update the flag whenever the user scrolls the pane
+    $messages.addEventListener('scroll', () => {
+        autoStickBottom = isNearBottom();
+    });
+
     function scrollToBottom() {
-        $messages.scrollTop = $messages.scrollHeight;
+        const el = $messages;
+        if (el) el.scrollTop = el.scrollHeight;
     }
 
     function fetchMessages() {
         return api('GET', `messages?session_id=${sessionId}&after_id=${lastId}`).then(rows => {
             if (!Array.isArray(rows)) return;
+            const wasNearBottom = autoStickBottom;
             rows.forEach(r => {
                 if (r.attachment_id && !r.attachment_url) {
                     r.attachment_url = window.wp && wp.media ? wp.media.attachment(r.attachment_id)?.attributes?.url : null;
@@ -89,7 +135,7 @@
                 lastId = Math.max(lastId, parseInt(r.id, 10));
             });
             if (rows.length) {
-                scrollToBottom();
+                if (wasNearBottom) scrollToBottom();
                 markRead();
             }
         })
@@ -107,12 +153,22 @@
         api('POST', 'messages/read', { session_id: sessionId }).catch(() => {});
     }
 
+    let typingPostCooldown = null;
+
     function sendTyping() {
+        // Ensure we're not triggering this on every keypress
+        if (typingPostCooldown) return;
+        typingPostCooldown = setTimeout(() => { typingPostCooldown = null;}, 1500);
         api('POST', 'typing', { session_id: sessionId }).catch(() => {});
     }
 
+    // When the user types, we set the typing
+    $text.addEventListener('input', () => {
+        clearTimeout(typingTimer);
+        typingTimer = setTimeout(sendTyping, 120);
+    });
     function checkTyping() {
-        return api( 'POST', 'typing', { session_id: sessionId }).then(res => {
+        return api( 'GET', `typing?session_id=${sessionId}`).then(res => {
             if (res && Array.isArray(res.others_typing) && res.others_typing.length) {
                 $typing.textContent = 'Someone is typing...';
                 $typing.hidden = false;
@@ -163,9 +219,10 @@
 
     ensureSession().then(() => {
         // initial load
+        fetchParticipants().then(() => presenceLookup());
         fetchMessages().then(scrollToBottom);
         startPolling();
         presencePing();
-        presenceTimer = setInterval(presencePing, 30000);
+        presenceTimer = setInterval(() => { presencePing(); presenceLookup(); }, 20000);
     });
 })();

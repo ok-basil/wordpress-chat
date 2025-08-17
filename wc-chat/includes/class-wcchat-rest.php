@@ -41,9 +41,14 @@ class REST {
         register_rest_route('wcchat/v1', '/typing', [
             [
                 'methods'               => 'POST',
-                'callback'              => [__CLASS__, 'typing'],
+                'callback'              => [__CLASS__, 'typing_set'],
                 'permission_callback'   => [__CLASS__, 'can_view'],
             ],
+            [
+                'methods'               => 'GET',
+                'callback'              => [__CLASS__, 'typing_peek'],
+                'permission_callback'   => function() { return is_user_logged_in(); },
+            ]
         ]);
 
         register_rest_route('wcchat/v1', '/presence', [
@@ -66,6 +71,20 @@ class REST {
                 'permission_callback'   => [__CLASS__, 'can_send'],
             ],
         ]);
+
+        register_rest_route('wcchat/v1', '/participants', [
+            [
+                'methods'               => 'GET',
+                'callback'              => [__CLASS__, 'participants'],
+                'permission_callback'   => [__CLASS__, 'can_view'],
+            ],
+        ]);
+
+        register_rest_route('wcchat/v1', '/sessions/claim', [
+            'methods'                   => 'POST',
+            'callback'                  => [__CLASS__, 'claim_session'],
+            'permission_callback'       => [__CLASS__, 'can_view'],
+        ]);
     }
 
     public static function can_view(WP_REST_Request $req) {
@@ -77,33 +96,90 @@ class REST {
         return self::can_view($req) && current_user_can('wcchat_send');
     }
 
-    public static function create_session(WP_REST_Request $req) {
+    public static function create_session(\WP_REST_Request $req) {
+        $opts = function_exists('\WCChat\Settings::defaults')
+            ? wp_parse_args(get_option(\WCChat\Settings::OPTION_KEY, []), \WCChat\Settings::defaults())
+            : ['assign_agent_mode'=>'round_robin','auto_assign_merchant'=>1,'auto_assign_designer'=>0,'designer_meta_key'=>'_wcchat_designer_user_id'];
+
         $product_id = (int) $req->get_param('product_id');
+        $current_id = get_current_user_id();
+
+        global $wpdb;
+
+        // Find the existing session for this user on this product
+        if ($product_id) {
+            $existing = $wpdb->get_var($wpdb->prepare(
+                "SELECT p.ID
+             FROM {$wpdb->posts} p
+             INNER JOIN {$wpdb->postmeta} pm
+                     ON pm.post_id = p.ID AND pm.meta_key = '_wcchat_product_id' AND pm.meta_value = %d
+             INNER JOIN {$wpdb->prefix}wcchat_participants part
+                     ON part.session_id = p.ID AND part.user_id = %d
+             WHERE p.post_type = 'chat_session' AND p.post_status = 'publish'
+             ORDER BY p.ID DESC
+             LIMIT 1",
+                $product_id, $current_id
+            ));
+            if ($existing) {
+                return new \WP_REST_Response(['session_id' => (int) $existing], 200);
+            }
+        }
+
+        // Create new session
         $title = 'Chat: ' . ($product_id ? get_the_title($product_id) : 'General');
         $session_id = wp_insert_post([
-            'post_type'     => 'chat_session',
-            'post_title'    => $title,
-            'post_status'   => 'publish',
+            'post_type'   => 'chat_session',
+            'post_title'  => $title,
+            'post_status' => 'publish',
         ]);
-
         if (is_wp_error($session_id)) return $session_id;
-
-        // Participants: current user and couterpart
-        global $wpdb;
-        $table = $wpdb->prefix . 'wcchat_participants';
-        $wpdb->insert($table, [
-            'session_id'        => $session_id,
-            'user_id'           => get_current_user_id(),
-            'role_slug'         => self::current_role_slug(),
-            'last_seen'         => current_time('mysql'),
-        ]);
 
         if ($product_id) {
             update_post_meta($session_id, '_wcchat_product_id', $product_id);
         }
 
-        return new WP_REST_Response(['session_id' => $session_id], 201);
+        // Add current user
+        \WCChat\Utils::add_participant($session_id, $current_id, self::current_role_slug());
+
+        // Auto-assign merchant (product author)
+        if ($product_id && !empty($opts['auto_assign_merchant'])) {
+            $author_id = (int) get_post_field('post_author', $product_id);
+            if ($author_id && $author_id !== $current_id) {
+                \WCChat\Utils::add_participant($session_id, $author_id, 'merchant');
+            }
+        }
+
+        // Auto-assign designer (if configured)
+        if (!empty($opts['auto_assign_designer'])) {
+            $meta_key = is_string($opts['designer_meta_key']) ? $opts['designer_meta_key'] : '_wcchat_designer_user_id';
+            $designer_id = $product_id ? (int) get_post_meta($product_id, $meta_key, true) : 0;
+            if ($designer_id && $designer_id !== $current_id) {
+                \WCChat\Utils::add_participant($session_id, $designer_id, 'designer');
+            }
+        }
+
+        // Agent assignment (round-robin/random/none)
+        if (($opts['assign_agent_mode'] ?? 'round_robin') !== 'none') {
+            $agent_ids = get_users(['role' => 'agent', 'fields' => 'ID']);
+            if (!empty($agent_ids)) {
+                $agent_id = 0;
+                if ($opts['assign_agent_mode'] === 'random') {
+                    shuffle($agent_ids);
+                    $agent_id = (int) $agent_ids[0];
+                } else {
+                    $idx = (int) get_option('wcchat_agent_rr', 0);
+                    $agent_id = (int) $agent_ids[$idx % count($agent_ids)];
+                    update_option('wcchat_agent_rr', $idx + 1);
+                }
+                if ($agent_id && $agent_id !== $current_id) {
+                    \WCChat\Utils::add_participant($session_id, $agent_id, 'agent');
+                }
+            }
+        }
+
+        return new \WP_REST_Response(['session_id' => (int) $session_id], 201);
     }
+
 
     private static function current_role_slug() {
         $user = wp_get_current_user();
@@ -180,9 +256,14 @@ class REST {
         return ['ok' => true, 'last_read_id' => $last_id];
     }
 
-    public static function typing(WP_REST_Request $req) {
+    public static function typing_set(WP_REST_Request $req) {
         $session_id = (int) $req->get_param('session_id');
         Utils::set_typing($session_id, get_current_user_id());
+        return ['ok' => true];
+    }
+
+    public static function typing_peek(\WP_REST_Request $req) {
+        $session_id = (int) $req->get_param('session_id');
         return ['others_typing' => Utils::others_typing($session_id, get_current_user_id())];
     }
 
@@ -223,6 +304,47 @@ class REST {
         wp_update_attachment_metadata($attachment_id, $attach_data);
 
         return ['attachment_id' => $attachment_id, 'url' => wp_get_attachment_url($attachment_id)];
+    }
+
+    public static function participants(\WP_REST_Request $req) {
+        global $wpdb;
+        $session_id = (int) $req->get_param('session_id');
+        $parts = $wpdb->prefix . 'wcchat_participants';
+
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT user_id, role_slug FROM $parts WHERE session_id=%d", $session_id), ARRAY_A
+        );
+
+        $out = [];
+        foreach ($rows as $row) {
+            $u = get_userdata((int)$row['user_id']);
+            if (!$u) continue;
+            $out[] = [
+                'user_id'       => (int)$row['user_id'],
+                'role_slug'     => $row['role_slug'],
+                'display_name'  => $u->display_name,
+                'avatar'        => get_avatar_url($u->ID, ['size' => 48]),
+            ];
+        }
+        return $out;
+    }
+
+    public static function claim_session(WP_REST_Request $req) {
+        $session_id = (int) $req->get_param('session_id');
+        $uid = get_current_user_id();
+
+        // Only participants can claim; managers can override
+        if (!\WCChat\Utils::ensure_user_in_session($session_id, $uid) && !current_user_can('wcchat_manage')) {
+            return new WP_Error('wcchat_forbidden', 'Not allowed', ['status' => 403]);
+        }
+
+        // Set owner
+        $owner = (int) get_post_meta($session_id, '_wcchat_owner', true);
+        if ($owner && $owner !== $uid && !current_user_can('wcchat_manage')) {
+            return new \WP_Error('wcchat_claimed', 'Already claimed', ['status' => 409, 'owner'=>$owner]);
+        }
+        update_post_meta($session_id, '_wcchat_owner', $uid);
+        return ['owner' => $uid];
     }
 }
 
