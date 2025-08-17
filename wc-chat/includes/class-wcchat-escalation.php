@@ -1,4 +1,7 @@
 <?php
+
+use WCChat\Utils;
+
 add_action('wcchat_new_message', function($session_id, $message_id) {
     // Only escalate on buyer messages
     global $wpdb;
@@ -19,7 +22,7 @@ add_action('wcchat_new_message', function($session_id, $message_id) {
     $has_agent = false;
     foreach ($rows as $row) {
         if (in_array($row['role_slug'], ['merchant', 'agent'], true)) {
-            if (\WCChat\Utils::is_online((int) $row['user_id'])) $any_online = true;
+            if (Utils::is_online((int) $row['user_id'])) $any_online = true;
             if ($row['role_slug'] === 'agent') $has_agent = true;
         }
     }
@@ -40,7 +43,7 @@ add_action('wcchat_new_message', function($session_id, $message_id) {
     ));
 
     if (!$exists) {
-        \WCChat\Utils::add_participant($session_id, $agent_id, 'agent');
+        Utils::add_participant($session_id, $agent_id, 'agent');
         // Nudge the agent to reply
         $user = get_userdata($agent_id);
         if ($user && $user->user_email) {

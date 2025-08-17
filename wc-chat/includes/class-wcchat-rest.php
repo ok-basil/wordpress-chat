@@ -125,7 +125,7 @@ class REST {
             }
         }
 
-        // Create new session
+        // Create a new session
         $title = 'Chat: ' . ($product_id ? get_the_title($product_id) : 'General');
         $session_id = wp_insert_post([
             'post_type'   => 'chat_session',
@@ -199,6 +199,22 @@ class REST {
         $rows = $wpdb->get_results($wpdb->prepare(
             "SELECT * FROM $messages WHERE session_id=%d AND id > %d ORDER BY id ASC LIMIT 200", $session_id, $after_id
         ), ARRAY_A);
+
+        if ($rows) {
+            foreach ($rows as &$row) {
+                $att_id = (int) ($row['attachment_id'] ?? 0);
+                if ($att_id) {
+                    $row['attachment_url'] = wp_get_attachment_url($att_id) ?: '';
+                    $row['attachment_name'] = basename(get_attached_file($att_id));
+                    $row['attachment_mime'] = get_post_mime_type($att_id);
+                    if (str_starts_with((string)$row['attachment_mime'], 'image/')) {
+                        $thumb = image_downsize($att_id, 'thumbnail');
+                        if ($thumb && is_array($thumb)) $row['attachment_thumb'] = $thumb[0];
+                    }
+                }
+            }
+            unset($row);
+        }
 
         return $rows ?: [];
     }
@@ -286,15 +302,48 @@ class REST {
         if (empty($_FILES['file'])) {
             return new WP_Error('wcchat_no_file', 'No file uploaded', ['status' => 400]);
         }
+
+        // Get file size limit from settings
+        $settings = wp_parse_args(get_option(\WCChat\Settings::OPTION_KEY, []), \WCChat\Settings::defaults());
+        $max_file_size_mb = (int) ($settings['max_file_size'] ?? 5);
+        $max_file_size = apply_filters('wcchat_max_file_size', $max_file_size_mb * MB_IN_BYTES);
+
+        // Check file size
+        $file_size = $_FILES['file']['size'];
+        if ($file_size > $max_file_size) {
+            return new WP_Error(
+                'wcchat_file_too_large',
+                sprintf(__('File is too large. Maximum size is %s.', 'wc-chat'), size_format($max_file_size,)),
+                ['status' => 413]
+            );
+        }
+
+        // Check for upload errors
+        if ($_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+            $error_messages = [
+                UPLOAD_ERR_INI_SIZE => __('File exceeds upload_max_filesize', 'wc-chat'),
+                UPLOAD_ERR_FORM_SIZE => __('File exceeds MAX_FILE_SIZE', 'wc-chat'),
+                UPLOAD_ERR_PARTIAL => __('File was only partially uploaded', 'wc-chat'),
+                UPLOAD_ERR_NO_FILE => __('No file was uploaded', 'wc-chat'),
+                UPLOAD_ERR_NO_TMP_DIR => __('Missing a temporary folder', 'wc-chat'),
+                UPLOAD_ERR_CANT_WRITE => __('Failed to write file to disk', 'wc-chat'),
+                UPLOAD_ERR_EXTENSION => __('A PHP extension stopped the file upload', 'wc-chat'),
+            ];
+
+            $error_message = $error_messages[$_FILES['file']['error']] ?? __('Unknown upload error', 'wc-chat');
+            return new WP_Error('wcchat_upload_error', $error_message, ['status' => 400]);
+        }
+
         require_once ABSPATH . 'wp-admin/includes/file.php';
         $overrides = ['test_form' => false, 'mimes' => null];
+
         $file = wp_handle_upload($_FILES['file'], $overrides);
         if (isset($file['error'])) {
             return new WP_Error('wcchat_upload_error', $file['error'], ['status' => 400]);
         }
         $attachment_id = wp_insert_attachment([
             'post_mime_type' => $file['type'],
-            'post_title' => sanitize_file_name($file['name']),
+            'post_title' => sanitize_file_name($_FILES['file']['name']),
             'post_content' => '',
             'post_status' => 'inherit',
         ], $file['file']);
@@ -349,17 +398,3 @@ class REST {
 }
 
 add_action('rest_api_init', [REST::class, 'register_routes']);
-
-// Email notification
-add_action('wcchat_new_message', function($session_id, $message_id) {
-    // Find other participants & email them
-    global $wpdb;
-    $parts = $wpdb->prefix . 'wcchat_participants';
-    $others = $wpdb->get_col($wpdb->prepare("SELECT user_id FROM $parts WHERE session_id=%d AND user_id<>%d", $session_id, get_current_user_id()));
-    foreach ($others as $uid) {
-        $user = get_userdata($uid);
-        if ($user && $user->user_email) {
-            wp_mail($user->user_email, 'New chat message', 'You have a new chat message.');
-        }
-    }
-}, 10, 2);

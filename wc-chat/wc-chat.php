@@ -73,7 +73,21 @@ add_action('wp_enqueue_scripts', function() {
         'user_id'       => get_current_user_id(),
         'is_logged'     => is_user_logged_in(),
         'site_name'     => get_bloginfo('name'),
+        'max_file_size' => apply_filters('wcchat_max_file_size', 5 * MB_IN_BYTES),
     ]);
+});
+
+// Mail notification
+add_action('phpmailer_init', function($phpmailer) {
+    $phpmailer->isSMTP();
+    $phpmailer->Host        = 'smtp.gmail.com';
+    $phpmailer->Port        = 587;
+    $phpmailer->SMTPAuth    = TRUE;
+    $phpmailer->SMTPSecure  = 'tls';
+    $phpmailer->Username    = 'okachebasil@gmail.com';
+    $phpmailer->Password    = 'etpg kwog fncs opbj';
+    $phpmailer->From        = 'okachebasil@gmail.com';
+    $phpmailer->FromName    = get_bloginfo('name');
 });
 
 // Shortcode
@@ -104,8 +118,8 @@ add_shortcode('wc_chat', function ($atts) {
             <div class="wcchat-messages" id="wcchat-messages" aria-live="polite" tabindex="0"></div>
             <div class="wcchat-typing" id="wcchat-typing" hidden></div>
             <form class="wcchat-input" id="wcchat-form">
-                <input type="text" id="wcchat-text" placeholder="Type a message..." aria-autocomplete="off" required />
-                <input type="file" id="wcchat-file" hidden />
+                <input type="text" id="wcchat-text" placeholder="Type a message..." aria-autocomplete="both" required />
+                <input type="file" id="wcchat-file" accept="image/*,.pdf,.doc,.docx,.txt" hidden />
                 <button type="button" id="wcchat-attach" title="Attach file">📎</button>
                 <button type="submit" id="wcchat-send">Send</button>
             </form>

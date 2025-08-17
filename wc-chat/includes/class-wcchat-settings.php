@@ -19,6 +19,7 @@ class Settings {
             'auto_assign_merchant'  => 1,
             'auto_assign_designer'  => 0,
             'designer_meta_key'     => '_wcchat_designer_user_id',
+            'max_file_size'         => 5, // 5MB default
         ];
     }
 
