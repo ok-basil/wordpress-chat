@@ -66,6 +66,10 @@ add_action('wp_enqueue_scripts', function() {
     wp_register_style('wcchat', WCCHAT_URL . 'assets/chat.css', [], WCCHAT_VERSION);
     wp_register_script('wcchat', WCCHAT_URL . 'assets/chat.js', [], WCCHAT_VERSION, true);
 
+    $options = wp_parse_args(get_option(\WCChat\Settings::OPTION_KEY, []), \WCChat\Settings::defaults());
+    $max_file_size_mb = (int) ($options['max_file_size'] ?? 5);
+    $max_file_size = apply_filters('wcchat_max_file_size', $max_file_size_mb * MB_IN_BYTES);
+
     // Always localize when registered
     wp_localize_script('wcchat', 'WCCHAT', [
         'rest'          => esc_url_raw(rest_url('wcchat/v1/')),
@@ -73,7 +77,7 @@ add_action('wp_enqueue_scripts', function() {
         'user_id'       => get_current_user_id(),
         'is_logged'     => is_user_logged_in(),
         'site_name'     => get_bloginfo('name'),
-        'max_file_size' => apply_filters('wcchat_max_file_size', 5 * MB_IN_BYTES),
+        'max_file_size' => $max_file_size,
     ]);
 });
 

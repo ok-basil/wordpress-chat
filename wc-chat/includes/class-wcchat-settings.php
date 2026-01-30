@@ -20,6 +20,7 @@ class Settings {
             'auto_assign_designer'  => 0,
             'designer_meta_key'     => '_wcchat_designer_user_id',
             'max_file_size'         => 5, // 5MB default
+            'auto_join_roles'       => 0,
         ];
     }
 
@@ -80,6 +81,22 @@ class Settings {
             'wcchat-settings',
             'wcchat_assign_section'
         );
+
+        add_settings_field(
+            'max_file_size',
+            'Max upload size (MB)',
+            [__CLASS__, 'field_max_file_size'],
+            'wcchat-settings',
+            'wcchat_assign_section'
+        );
+
+        add_settings_field(
+            'auto_join_roles',
+            'Auto-join agents/admins',
+            [__CLASS__, 'field_auto_join_roles'],
+            'wcchat-settings',
+            'wcchat_assign_section'
+        );
     }
 
     public static function sanitize($input) : array {
@@ -99,11 +116,18 @@ class Settings {
         $meta = isset($out['designer_meta_key']) ? sanitize_key($out['designer_meta_key']) : $defaults['designer_meta_key'];
         if ($meta === '') $meta = $defaults['designer_meta_key'];
 
+        $max_file_size = isset($out['max_file_size']) ? absint($out['max_file_size']) : $defaults['max_file_size'];
+        if ($max_file_size < 1) $max_file_size = $defaults['max_file_size'];
+
+        $auto_join_roles = !empty($out['auto_join_roles']) ? 1 : 0;
+
         return [
             'assign_agent_mode'     => $mode,
             'auto_assign_merchant'  => $merchant,
             'auto_assign_designer'  => $designer,
             'designer_meta_key'     => $meta,
+            'max_file_size'         => $max_file_size,
+            'auto_join_roles'       => $auto_join_roles,
         ];
     }
 
@@ -151,6 +175,24 @@ class Settings {
         ?>
         <input type="text" name="<?php echo esc_attr(self::OPTION_KEY); ?>[designer_meta_key]" value="<?php echo $val; ?>" class="regular-text" />
         <p class="description">Meta key on the product that stores the <code>user_id</code> of the designer.</p>
+        <?php
+    }
+
+    public static function field_max_file_size() {
+        $val = (int) self::get_option('max_file_size');
+        ?>
+        <input type="number" min="1" name="<?php echo esc_attr(self::OPTION_KEY); ?>[max_file_size]" value="<?php echo esc_attr($val); ?>" class="small-text" />
+        <p class="description">Maximum upload size in megabytes for chat attachments.</p>
+        <?php
+    }
+
+    public static function field_auto_join_roles() {
+        $val = (int) self::get_option('auto_join_roles');
+        ?>
+        <label>
+            <input type="checkbox" name="<?php echo esc_attr(self::OPTION_KEY); ?>[auto_join_roles]" value="1" <?php checked($val, 1); ?>>
+            Allow agents and administrators to auto-join sessions they access.
+        </label>
         <?php
     }
 

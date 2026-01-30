@@ -25,6 +25,8 @@
     let presenceTimer = null;
     let typingTimer = null;
     let otherIds = [];
+    const pollInterval = 2000;
+    const presenceInterval = 20000;
 
     if (!isLogged) {
         messages.innerHTML += '<div class="wcchat-info">Please log in to use chat.</div>';
@@ -83,13 +85,11 @@
     }
 
     function presenceLookup() {
-        if (!otherIds.length) return Promise.resolve()
+        if (!presence || !sessionId || !otherIds.length) return Promise.resolve();
 
         const qs = otherIds.map(id => `user_ids[]=${encodeURIComponent(id)}`).join('&');
-        return api('GET', `presence?${qs}`).then(map => {
+        return api('GET', `presence?session_id=${sessionId}&${qs}`).then(map => {
             const anyOnline = Object.values(map || {}).some(Boolean);
-
-            const presence = document.querySelector('#wcchat-presence');
             const label = presence.querySelector('.label');
 
             if (anyOnline) {
@@ -154,10 +154,16 @@
 
     function startPolling() {
         if (pollTimer) return;
-        pollTimer = setInterval( () => {
+        pollTimer = setInterval(() => {
             fetchMessages().catch(() => {});
             checkTyping().catch(() => {});
-        }, 2000)
+        }, pollInterval);
+    }
+
+    function stopPolling() {
+        if (!pollTimer) return;
+        clearInterval(pollTimer);
+        pollTimer = null;
     }
 
     function markRead() {
@@ -204,12 +210,33 @@
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
-    if (text) {
-        text.addEventListener('input', () => {
-            clearTimeout(typingTimer);
-            typingTimer = setTimeout(sendTyping, 100);
-        });
+    function startPresence() {
+        if (presenceTimer) return;
+        presenceTimer = setInterval(() => {
+            presencePing();
+            presenceLookup();
+        }, presenceInterval);
     }
+
+    function stopPresence() {
+        if (!presenceTimer) return;
+        clearInterval(presenceTimer);
+        presenceTimer = null;
+    }
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+            stopPolling();
+            stopPresence();
+            return;
+        }
+
+        fetchMessages().then(scrollToBottom).catch(() => {});
+        startPolling();
+        presencePing();
+        presenceLookup();
+        startPresence();
+    });
 
     if (attachBtn && file) {
         attachBtn.addEventListener('click', () => file.click());
@@ -274,6 +301,6 @@
         fetchMessages().then(scrollToBottom);
         startPolling();
         presencePing();
-        presenceTimer = setInterval(() => { presencePing(); presenceLookup(); }, 20000);
+        startPresence();
     });
 })();

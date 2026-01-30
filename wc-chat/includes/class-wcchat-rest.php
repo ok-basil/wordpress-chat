@@ -8,6 +8,9 @@ use WP_REST_Response;
 if (!defined('ABSPATH')) exit;
 
 class REST {
+    /**
+     * Register REST endpoints for chat sessions.
+     */
     public static function register_routes() {
         register_rest_route('wcchat/v1', '/sessions', [
             [
@@ -60,7 +63,7 @@ class REST {
             [
                 'methods'               => 'GET',
                 'callback'              => [__CLASS__, 'presence_lookup'],
-                'permission_callback'   => function() { return current_user_can('wcchat_view'); },
+                'permission_callback'   => [__CLASS__, 'can_view'],
             ],
         ]);
 
@@ -89,11 +92,37 @@ class REST {
 
     public static function can_view(WP_REST_Request $req) {
         $session_id = (int) ($req['session_id'] ?? $req->get_param('session_id'));
-        return is_user_logged_in() && Utils::ensure_user_in_session($session_id, get_current_user_id());
+        if (!is_user_logged_in()) {
+            return false;
+        }
+
+        if (current_user_can('wcchat_manage')) {
+            return true;
+        }
+
+        return Utils::ensure_user_in_session($session_id, get_current_user_id());
     }
 
     public static function can_send(WP_REST_Request $req) {
         return self::can_view($req) && current_user_can('wcchat_send');
+    }
+
+    /**
+     * Restrict upload types for chat attachments.
+     */
+    private static function allowed_upload_mimes() : array {
+        $mimes = [
+            'jpg|jpeg|jpe' => 'image/jpeg',
+            'png' => 'image/png',
+            'gif' => 'image/gif',
+            'webp' => 'image/webp',
+            'pdf' => 'application/pdf',
+            'txt' => 'text/plain',
+            'doc' => 'application/msword',
+            'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ];
+
+        return apply_filters('wcchat_allowed_upload_mimes', $mimes);
     }
 
     public static function create_session(\WP_REST_Request $req) {
@@ -201,15 +230,41 @@ class REST {
         ), ARRAY_A);
 
         if ($rows) {
-            foreach ($rows as &$row) {
+            $attachment_ids = [];
+            foreach ($rows as $row) {
                 $att_id = (int) ($row['attachment_id'] ?? 0);
                 if ($att_id) {
-                    $row['attachment_url'] = wp_get_attachment_url($att_id) ?: '';
-                    $row['attachment_name'] = basename(get_attached_file($att_id));
-                    $row['attachment_mime'] = get_post_mime_type($att_id);
-                    if (str_starts_with((string)$row['attachment_mime'], 'image/')) {
-                        $thumb = image_downsize($att_id, 'thumbnail');
-                        if ($thumb && is_array($thumb)) $row['attachment_thumb'] = $thumb[0];
+                    $attachment_ids[] = $att_id;
+                }
+            }
+
+            $attachments = [];
+            $attachment_ids = array_values(array_unique($attachment_ids));
+            foreach ($attachment_ids as $att_id) {
+                $mime = get_post_mime_type($att_id);
+                $attachments[$att_id] = [
+                    'url' => wp_get_attachment_url($att_id) ?: '',
+                    'name' => basename(get_attached_file($att_id)),
+                    'mime' => $mime,
+                    'thumb' => '',
+                ];
+
+                if ($mime && str_starts_with((string) $mime, 'image/')) {
+                    $thumb = image_downsize($att_id, 'thumbnail');
+                    if ($thumb && is_array($thumb)) {
+                        $attachments[$att_id]['thumb'] = $thumb[0];
+                    }
+                }
+            }
+
+            foreach ($rows as &$row) {
+                $att_id = (int) ($row['attachment_id'] ?? 0);
+                if ($att_id && isset($attachments[$att_id])) {
+                    $row['attachment_url'] = $attachments[$att_id]['url'];
+                    $row['attachment_name'] = $attachments[$att_id]['name'];
+                    $row['attachment_mime'] = $attachments[$att_id]['mime'];
+                    if ($attachments[$att_id]['thumb']) {
+                        $row['attachment_thumb'] = $attachments[$att_id]['thumb'];
                     }
                 }
             }
@@ -225,6 +280,23 @@ class REST {
         $session_id = (int) $req->get_param('session_id');
         $text = wp_kses_post($req->get_param('message'));
         $attachment_id = (int) $req->get_param('attachment_id');
+
+        if ($attachment_id) {
+            $attachment = get_post($attachment_id);
+            if (!$attachment || $attachment->post_type !== 'attachment') {
+                return new WP_Error('wcchat_attachment_invalid', 'Attachment not found', ['status' => 404]);
+            }
+
+            $attachment_session_id = (int) get_post_meta($attachment_id, '_wcchat_session_id', true);
+            if (!$attachment_session_id || $attachment_session_id !== $session_id) {
+                return new WP_Error('wcchat_attachment_mismatch', 'Attachment does not belong to this session', ['status' => 403]);
+            }
+
+            $uploader_id = (int) get_post_meta($attachment_id, '_wcchat_uploader_id', true);
+            if ($uploader_id && $uploader_id !== get_current_user_id() && !current_user_can('wcchat_manage')) {
+                return new WP_Error('wcchat_attachment_forbidden', 'Attachment not owned by user', ['status' => 403]);
+            }
+        }
 
         if (!$text && !$attachment_id) {
             return new WP_Error('wcchat_empty', 'Message or attachment required', ['status' => 400]);
@@ -289,10 +361,27 @@ class REST {
     }
 
     public static function presence_lookup(WP_REST_Request $req) {
-        $user_ids = array_map('intval', (array) $req->get_param('user_ids'));
+        global $wpdb;
+        $session_id = (int) $req->get_param('session_id');
+        if (!$session_id) {
+            return new WP_Error('wcchat_missing_session', 'Session required', ['status' => 400]);
+        }
+
+        $requested_ids = array_map('intval', (array) $req->get_param('user_ids'));
+        $parts = $wpdb->prefix . 'wcchat_participants';
+        $participant_ids = $wpdb->get_col($wpdb->prepare(
+            "SELECT user_id FROM $parts WHERE session_id=%d",
+            $session_id
+        ));
+
+        $lookup_ids = $participant_ids;
+        if (!empty($requested_ids)) {
+            $lookup_ids = array_values(array_intersect($participant_ids, $requested_ids));
+        }
+
         $out = [];
-        foreach ($user_ids as $uid) {
-            $out[$uid] = Utils::is_online($uid);
+        foreach ($lookup_ids as $uid) {
+            $out[(int) $uid] = Utils::is_online((int) $uid);
         }
 
         return $out;
@@ -301,6 +390,11 @@ class REST {
     public static function upload_file(WP_REST_Request $req) {
         if (empty($_FILES['file'])) {
             return new WP_Error('wcchat_no_file', 'No file uploaded', ['status' => 400]);
+        }
+
+        $session_id = (int) $req->get_param('session_id');
+        if (!$session_id) {
+            return new WP_Error('wcchat_missing_session', 'Session required', ['status' => 400]);
         }
 
         // Get file size limit from settings
@@ -335,7 +429,7 @@ class REST {
         }
 
         require_once ABSPATH . 'wp-admin/includes/file.php';
-        $overrides = ['test_form' => false, 'mimes' => null];
+        $overrides = ['test_form' => false, 'mimes' => self::allowed_upload_mimes()];
 
         $file = wp_handle_upload($_FILES['file'], $overrides);
         if (isset($file['error'])) {
@@ -347,6 +441,9 @@ class REST {
             'post_content' => '',
             'post_status' => 'inherit',
         ], $file['file']);
+
+        update_post_meta($attachment_id, '_wcchat_session_id', $session_id);
+        update_post_meta($attachment_id, '_wcchat_uploader_id', get_current_user_id());
 
         require_once ABSPATH . 'wp-admin/includes/image.php';
         $attach_data = wp_generate_attachment_metadata($attachment_id, $file['file']);
@@ -364,12 +461,26 @@ class REST {
             "SELECT user_id, role_slug FROM $parts WHERE session_id=%d", $session_id), ARRAY_A
         );
 
+        if (!$rows) {
+            return [];
+        }
+
+        $user_ids = array_map('intval', array_column($rows, 'user_id'));
+        $users = get_users(['include' => $user_ids]);
+        $user_map = [];
+        foreach ($users as $user) {
+            $user_map[(int) $user->ID] = $user;
+        }
+
         $out = [];
         foreach ($rows as $row) {
-            $u = get_userdata((int)$row['user_id']);
-            if (!$u) continue;
+            $user_id = (int) $row['user_id'];
+            $u = $user_map[$user_id] ?? null;
+            if (!$u) {
+                continue;
+            }
             $out[] = [
-                'user_id'       => (int)$row['user_id'],
+                'user_id'       => $user_id,
                 'role_slug'     => $row['role_slug'],
                 'display_name'  => $u->display_name,
                 'avatar'        => get_avatar_url($u->ID, ['size' => 48]),
@@ -396,5 +507,3 @@ class REST {
         return ['owner' => $uid];
     }
 }
-
-add_action('rest_api_init', [REST::class, 'register_routes']);

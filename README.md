@@ -24,6 +24,8 @@ A custom WordPress plugin that adds a buyer - merchant/designer/agent chat to Wo
     - Agent assignment: **Robin-round / Random / None**
     - Auto-assign: **merchant** (product author)
     - Auto-assign: **designer** (via meta key, default `_wcchat_designer_user_id`)
+    - Max upload size (MB) for chat attachments
+    - Auto-join agents/admins (optional)
 
 ## How It Works
 
@@ -34,7 +36,7 @@ A custom WordPress plugin that adds a buyer - merchant/designer/agent chat to Wo
     - Optional designer (via product meta)
     - One agent (robin-round or random)—if enabled
 - **Find or create logic** ensures the same user reuses their session per product.
-- Frontend **polls** for new messages and typing status; presence heartbeats every ~30s.
+- Frontend **polls** for new messages and typing status; presence heartbeats every ~20s.
 
 ## Technologies Used
 
