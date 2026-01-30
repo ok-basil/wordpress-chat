@@ -1,6 +1,6 @@
 # WC Chat
 
-A custom WordPress plugin that adds a buyer - merchant/designer/agent chat to WooCommerce product pages and anywhere via shortcode. It's role-aware, WooCommerce awayre, ships with a REST API, AJAX polling, read/unread receipts, typing indicator, online presence, file uploads and email notifications.
+A custom WordPress plugin that adds a buyer - merchant/designer/agent chat to WooCommerce product pages and anywhere via shortcode. It's role-aware, WooCommerce aware, ships with a REST API, AJAX polling, read/unread receipts, typing indicator, online presence, file uploads and email notifications.
 
 ## Setup & Installation
 
